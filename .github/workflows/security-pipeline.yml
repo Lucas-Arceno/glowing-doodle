@@ -1,0 +1,120 @@
+name: Security Pipeline - DevSecOps
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  group: security-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sast-codeql:
+    name: Análise SAST - CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Inicializar CodeQL (Python)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Executar análise CodeQL (gera SARIF e faz upload)
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+          output: ./relatorios/codeql-results.sarif
+          upload: true
+
+      - name: Normalizar arquivo para comparador
+        run: |
+          cp ./relatorios/codeql-results.sarif ./relatorios/relatorio_codeql.json
+
+      - name: Publicar artefato CodeQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-report
+          path: |
+            relatorios/codeql-results.sarif
+            relatorios/relatorio_codeql.json
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  llm-analysis:
+    name: Análise com LLM (GPT)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install "openai>=1.0.0" python-dotenv requests
+
+      - name: Executar script LLM (GPT)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python scripts/llm_scan.py
+
+      - name: Publicar artefatos LLM
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-report
+          path: |
+            relatorios/relatorio_llm.json
+            relatorios/relatorio_llm.txt
+
+  # comparar-resultados:
+  #   name: Comparar Resultados
+  #   runs-on: ubuntu-latest
+  #   needs: [sast-codeql, llm-analysis]
+  #   steps:
+  #     - name: Checkout código
+  #       uses: actions/checkout@v4
+
+  #     - name: Configurar Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.11"
+
+  #     - name: Baixar artefatos (CodeQL, LLM)
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: "*-report"
+  #         path: relatorios
+  #         merge-multiple: true
+
+  #     - name: Executar comparador
+  #       run: |
+  #         python scripts/comparar_resultados.py
+
+  #     - name: Publicar comparativo final
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: comparativo-report
+  #         path: relatorios/comparativo.json
