@@ -34,17 +34,11 @@ jobs:
           output: ./relatorios/codeql-results.sarif
           upload: true
 
-      - name: Normalizar arquivo para comparador
-        run: |
-          cp ./relatorios/codeql-results.sarif ./relatorios/relatorio_codeql.json
-
-      - name: Publicar artefato CodeQL
+      - name: Publicar artefato CodeQL (SARIF puro)
         uses: actions/upload-artifact@v4
         with:
           name: codeql-report
-          path: |
-            relatorios/codeql-results.sarif
-            relatorios/relatorio_codeql.json
+          path: relatorios/codeql-results.sarif
 
   sonarqube:
     name: SonarQube
